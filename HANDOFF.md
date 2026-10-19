@@ -1,4 +1,4 @@
-# HANDOFF — Bodega Montecielo (al 3-oct-2026)
+# HANDOFF — Bodega Montecielo (al 19-oct-2026)
 
 > Traspaso para un chat nuevo. **Leé esto completo, y después `CLAUDE.md`, antes
 > de tocar nada.** El historial largo (hasta el 2-oct) está entero en
@@ -27,8 +27,12 @@
   `xmizawuhiounkiaqrwxd` (`sa-east-1`).
 - **Datos (2-oct):** 129 ítems, 234 movimientos, 35 personas, 8 obras activas.
   El último movimiento es del 8-sep.
-- **Cierre del 3-oct (rama `claude/final-audit-defects-89pl3v`):** todos los
-  huecos de la auditoría del 2-oct.
+- **⚠ EL CIERRE DEL 3-OCT ESTÁ EN EL REPO, NO EN PRODUCCIÓN** (auditoría del
+  7-oct, `AUDITORIA-2026-10-07.md`). Hoy la llave pública lee y escribe todo,
+  `authenticate_user` vive y hay 3 claves en texto plano. Se aplica pegando
+  `supabase/APLICAR-3-OCT.sql` en el editor SQL de Supabase (ver §4).
+- **Cierre del 3-oct (rige cuando se aplique):** todos los huecos de la
+  auditoría del 2-oct.
   - Nadie se vuelve administrador editando la tabla de accesos.
   - La llave pública ya no lee ni mueve inventario: hace falta la sesión de
     alguien de la bodega.
@@ -75,9 +79,14 @@
 
 ## 4. Pendientes, en orden
 
-1. **Si las migraciones `20261003*` no están aplicadas** (comprobar: en
-   `pg_policies` las tablas tienen `solo_la_bodega`), ensayarlas con `raise` y
-   aplicarlas, en orden.
+1. **Juli pega `supabase/APLICAR-3-OCT.sql`** en supabase.com → SQL Editor →
+   New query → Run. Debe salir «LISTO»; «NO SE APLICÓ NADA» = no quedó nada.
+   No se puede desde una sesión remota de Claude: el conector pide confirmar
+   cada `DROP` y se corta a los 60 s. Después, comprobar en la base.
+   - El proyecto amaneció PAUSADO el 19-oct pese al latido: revisar que
+     `/api/latido` responda 200 y que el cron de Vercel corra.
+   - Juli decide: pistola de Héctor, «Estuco tipo 3» gemelos, los 2 préstamos
+     de lijadora Stanley de Diego, prueba A1–A7 del asistente.
 2. **Juli:** generar el código de Kate y el de Camilo, y que entren.
 3. **Inventario definitivo.**
    - **Decisión de Juli:** la Lista 5 (lo que cada uno tiene hoy o lo que tuvo
@@ -130,4 +139,6 @@ Juli no quiere funciones nuevas: solo cerrar lo roto y lo pendiente.
   rechaza las claves vacías.
 - **Antes de aplicar una migración en producción**, se prueba dentro de una
   transacción que termina en `raise exception` con los resultados: así se
-  revierte sola.
+  revierte sola. Por el conector solo sirve sin `DROP`.
+- **Que esté en el repo no es que esté en producción.** El estado se lee en la
+  base (`pg_policies`, `list_migrations`), nunca en CLAUDE.md ni acá.
