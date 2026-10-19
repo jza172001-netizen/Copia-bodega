@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠ Production state (7 Oct 2026): the 3-Oct migrations are NOT applied
+
+Read the server, not this file. On 7 Oct 2026 production still had
+`service_access` (public read/write) on every table, `authenticate_user` alive,
+three plain-text passwords and an unbalanced Kardex: the three `20261003*`
+migrations were committed on 3 Oct and never applied, while this file described
+them as done. Everything below marked «3-oct» is true of the REPO. They are
+applied by pasting **`supabase/APLICAR-3-OCT.sql`** into Supabase's SQL editor
+— the three migrations verbatim, in one transaction that checks itself and
+aborts leaving nothing if any check fails (`verificar-baseline.cjs` tests it).
+It cannot be applied from a remote Claude session: the Supabase connector asks
+for a manual confirmation of every `DROP`, that prompt never shows, and the call
+dies at 60 s. Check first: `select tablename, policyname from pg_policies where
+schemaname = 'public'` must show `solo_la_bodega`.
+
 ## Commands
 
 ```bash
@@ -83,8 +98,13 @@ broken. If `vite` cannot be installed (the `xlsx` CDN is blocked, which kills an
 `npm install`), install the type-bearing packages into a scratch directory and
 copy them into `node_modules`.
 
-Still uncovered: browser-level journeys (clicking, reloading, verifying what
-persisted) and a true two-session concurrency test — PGlite runs on one
+**Browser journeys exist since 7 Oct 2026:** `tests/navegador/recorrido.mjs`
+runs the BUILT app in Chromium at phone size against a fake in-memory Supabase
+(`tests/navegador/falso-supabase.mjs`, never the real base) and checks what the
+app SENT: login, the 3-Oct block with `FECHA`, a future `FECHA` (nothing sent),
+the old format. Not in `npm run test`; how to run is in its header.
+
+Still uncovered: Organizar bodega and returns in the browser, and a true two-session concurrency test — PGlite runs on one
 exclusive connection, so it cannot prove a race.
 
 ## Architecture
@@ -110,6 +130,11 @@ be serializable (Dates are revived on read). Failures count up to
 `components/PendientesView.tsx`, where a person can retry or discard **with a
 stated reason**. The previous `withSync(promise)` could not retry anything: a
 launched promise has already run and is not data.
+**One pass at a time** (7 Oct 2026): `withSync` only enqueues and calls
+`procesarCola`; a call during a pass sets `otraVuelta` and the pass loops again.
+It used to attempt beside the queue and two writes in a row were sent twice.
+`withSync` resolves with THAT op's own result (`esperando`), `undefined` without
+a session.
 
 **Data flow:** `App.tsx` owns all data and passes handlers down as props. There is no context, Redux, or other state library.
 
@@ -167,8 +192,11 @@ into the SAME `LineaLote` the old one produces — verification, summary,
 register and `/api/despacho` are untouched; `tests/pantalla.test.ts` proves both
 formats register identical movements. `ItemLote.categoria` only decides how a
 NEW item is born (`marcarNuevo`); for an existing item the warehouse type wins
-(loan vs expense) and a mismatch raises `categoria` at level `mirar` (Accesorio
-vs Consumible is not a mismatch). The assistant's prompt and knowledge are
+(loan vs expense) and a mismatch raises `categoria` at level `mirar` ONLY when it
+changes Préstamo vs Gasto. Inside an entrega an unknown `[SECCIÓN]` and any
+`Algo:` line that is not a field go to «no leídos» (they used to become items);
+a `HORA:` that is not HH:MM raises `fecha`/`decidir` (`problemaDeHora`, shared
+with the API) instead of silently taking the current time. The assistant's prompt and knowledge are
 `asistente/INSTRUCCIONES.md` + `asistente/BODEGA-MONTECIELO.md`;
 `tests/documentos.test.ts` parses the blocks written in them with the real
 reader, so the docs and the app cannot drift. «Zona general» is the project
@@ -186,7 +214,12 @@ and it is NEVER silently replaced by today. The API leaves those lines pending.
 A bare trailing number is inches only for pipe families (`seMideEnPulgadas`) or
 when `"`/«pulgadas» was said: «lija 180» is grit (medida `180`, no quote — still
 never swapped for «Lija 240»). Unit abbreviations without «de» (`10 kg lechada`)
-are stripped for search and for the new item's name (`sinUnidadDicha`).
+are stripped for search (`sinUnidadDicha`). Fractions (`3/8`) and the families
+ordered in inches (`SE_PIDEN_EN_PULGADAS`: brocha, disco, clavo, puntilla,
+tornillo, broca, varilla, chazo, perno) also take `"`. A NEW item's name strips
+only pure units (`sinUnidadPura`): «tubos de 4» was born as «4» until 7 Oct.
+«Sí, crear «nombre»» shows whenever no item was chosen. On a phone the sidebar
+starts closed.
 
 **Node is 24.x** (`package.json` engines). Vercel discontinued 20.x on
 1 Oct 2026 and every build pinned to it fails before compiling.
@@ -284,8 +317,9 @@ identity with the SAME e-mail formula as `core/identidad.ts` (tested in
 `tests/accesos.test.ts`), and stores the password in NO table. Before this, a new
 account could never log in: the code was compared on the phone against a column
 the cloud never sends, and no server identity was created. `borrar_acceso` bans
-the identity; `restore_user` unbans it. `authenticate_user` (old path) rejects
-**L4 is closed (3-oct-2026, `20261003120000` + `20261003130000`):**
+the identity; `restore_user` unbans it.
+
+**L4 is closed IN THE REPO — production pending, see the top (3-oct-2026, `20261003120000` + `20261003130000`):**
 `app_users` has no public write policies, `authenticate_user` is DROPPED, every
 `app_users.password` is `''`, `restore_user` and `get_deleted_users_safe` are
 admin-only, and a wrong `dar_de_alta` code returns EMPTY instead of raising (a
@@ -365,7 +399,7 @@ gated by `BODEGA_API_TOKEN`, both of which live only in Vercel's environment
 variables. See `api/README.md`. This file used to say no backend existed; it did
 by the time anyone read that sentence.
 
-**The public key no longer moves inventory (since 3-oct-2026,
+**The public key no longer moves inventory — in the repo; production pending (3-oct-2026,
 `20261003130000_solo_la_bodega.sql`).** Every data table has ONE policy,
 `solo_la_bodega`, for `authenticated` with `es_de_la_bodega()`: a session whose
 `auth.uid()` is a LIVE `app_users` row (an identity alone — a public sign-up, a
@@ -392,7 +426,8 @@ stale preview or a lagging phone wrote an old quantity into the cloud.
 identical items.
 
 **Kardex is zero** after `20261003140000_kardex_en_cero.sql` (entries added,
-stock untouched). `api/latido.ts` + `vercel.json` cron reads one row a day so the
+stock untouched) — once applied. Rehearsed on production 7 Oct and rolled back:
+261 → 286 rows, total stock 94 → 94, zero unbalanced items. `api/latido.ts` + `vercel.json` cron reads one row a day so the
 free plan does not pause the project again.
 
 `storage.ts`'s `AppData` interface is still the canonical shape of persisted
